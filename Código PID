@@ -1,0 +1,117 @@
+/* pid_motor.c - controle PID de velocidade do motor DC
+ * Instalar:  sudo apt install pigpio
+ * Compilar:  gcc -O2 -Wall -o pid_motor pid_motor.c -lpigpio -lrt -lpthread
+ * Executar:  sudo systemctl stop pigpiod && sudo ./pid_motor  (Ctrl+C para parar)
+ */
+#include <pigpio.h>
+#include <stdio.h>
+#include <signal.h>
+#include <sched.h>
+#include <time.h>
+
+#define PWM_PIN   18
+#define IN1       23
+#define IN2       24
+#define ENC_A     17
+#define ENC_B     27
+#define PPR       (374 * 4)   /* pulsos por volta do eixo de saida (x4) - confirmar */
+#define TS        0.02        /* periodo de amostragem [s] */
+#define PWM_FREQ  1000        /* frequencia do PWM [Hz] */
+
+static const double KP = 2.0, KI = 40.0, KD = 0.10;
+static const double N = 10.0;          /* constante do filtro da derivada */
+static const double SETPOINT = 50.0;   /* rpm */
+
+static volatile long count = 0;
+static volatile int levA = 0, levB = 0;
+static volatile sig_atomic_t running = 1;
+
+static void on_sigint(int sig) { (void)sig; running = 0; }
+
+/* decodificacao em quadratura x4: chamada a cada borda de A ou B */
+static void enc_cb(int gpio, int level, uint32_t tick)
+{
+    (void)tick;
+    if (level == PI_TIMEOUT) return;
+    if (gpio == ENC_A) {
+        levA = level;
+        __atomic_add_fetch(&count, (levA != levB) ? 1 : -1, __ATOMIC_RELAXED);
+    } else {
+        levB = level;
+        __atomic_add_fetch(&count, (levA == levB) ? 1 : -1, __ATOMIC_RELAXED);
+    }
+}
+
+int main(void)
+{
+    if (gpioInitialise() < 0) {
+        fprintf(stderr, "Falha ao iniciar a pigpio\n");
+        return 1;
+    }
+    gpioSetSignalFunc(SIGINT, on_sigint);
+
+    struct sched_param sp = { .sched_priority = 80 };   /* tempo real */
+    sched_setscheduler(0, SCHED_FIFO, &sp);
+
+    gpioSetMode(IN1, PI_OUTPUT);
+    gpioSetMode(IN2, PI_OUTPUT);
+    gpioWrite(IN1, 1);                       /* sentido de giro */
+    gpioWrite(IN2, 0);
+
+    gpioSetMode(ENC_A, PI_INPUT);
+    gpioSetMode(ENC_B, PI_INPUT);
+    gpioSetPullUpDown(ENC_A, PI_PUD_UP);
+    gpioSetPullUpDown(ENC_B, PI_PUD_UP);
+    levA = gpioRead(ENC_A);
+    levB = gpioRead(ENC_B);
+    gpioSetAlertFunc(ENC_A, enc_cb);
+    gpioSetAlertFunc(ENC_B, enc_cb);
+
+    FILE *log = fopen("ensaio.csv", "w");
+    if (!log) { gpioTerminate(); return 1; }
+    fprintf(log, "t_s,setpoint_rpm,rpm,pwm_pct\n");
+
+    double I = 0.0, e_prev = 0.0, d_f = 0.0;
+    const double alpha = N * TS / (1.0 + N * TS);
+    const long ts_ns = (long)(TS * 1e9);
+    long prev_count = 0;
+    struct timespec t0, next, now;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    next = t0;
+
+    while (running) {
+        next.tv_nsec += ts_ns;                       /* proximo instante */
+        if (next.tv_nsec >= 1000000000L) {
+            next.tv_nsec -= 1000000000L;
+            next.tv_sec++;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+
+        long c = __atomic_load_n(&count, __ATOMIC_RELAXED);
+        double rpm = (double)(c - prev_count) / PPR / TS * 60.0;
+        prev_count = c;
+
+        double e = SETPOINT - rpm;
+        d_f += alpha * ((e - e_prev) / TS - d_f);   /* derivada filtrada */
+        double I_new = I + KI * e * TS;
+        double u_raw = KP * e + I_new + KD * d_f;
+        double u = u_raw < 0.0 ? 0.0 : (u_raw > 100.0 ? 100.0 : u_raw);
+        if (u == u_raw) I = I_new;                   /* anti-windup */
+        e_prev = e;
+
+        gpioHardwarePWM(PWM_PIN, PWM_FREQ, (unsigned)(u * 10000.0));  /* 0 a 1e6 */
+
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        double t = (now.tv_sec - t0.tv_sec) + (now.tv_nsec - t0.tv_nsec) * 1e-9;
+        fprintf(log, "%.3f,%.1f,%.2f,%.1f\n", t, SETPOINT, rpm, u);
+    }
+
+    gpioHardwarePWM(PWM_PIN, 0, 0);              /* desliga o motor */
+    gpioWrite(IN1, 0);
+    gpioWrite(IN2, 0);
+    gpioSetAlertFunc(ENC_A, NULL);
+    gpioSetAlertFunc(ENC_B, NULL);
+    fclose(log);
+    gpioTerminate();
+    return 0;
+}
