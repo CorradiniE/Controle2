@@ -1,0 +1,44 @@
+========================================================================
+IDENTIFICAÇÃO DA PLANTA (curva de reação) + SINTONIA ZIEGLER-NICHOLS
+========================================================================
+Ensaio: pid/dados/2026-11-19_malha_aberta_degrau_20a35.csv (cortado em t <= 74 s) (velocidade com sinal invertido)
+Amostras em malha aberta: 711  |  degraus encontrados: 2
+Ts real: média 50.02 ms, desvio 0.60 ms, min 48.00 ms, max 65.00 ms
+
+Degrau analisado
+  duty: 20 % -> 35 %   (delta = 15 %)
+  t_degrau ~ 70.040 s (incerteza +-Ts/2 = +-25 ms, que vai direto para theta)
+  y0 = 10.804 RPM   yf = 43.309 RPM   (Delta = 32.505 RPM)
+
+Modelo  G(s) = K e^(-theta s) / (tau s + 1)
+  método           K [RPM/%]   tau [s]  theta [s]  fit [%]
+  tangente             2.167    0.3619   0.007832     80.4
+  smith                2.167     0.221    0.03562     93.0  <- usado
+
+G(s) = 2.167 e^(-0.03562 s) / (0.221 s + 1)
+
+Discretização ZOH, T = 50 ms (theta = 1*T + 10.6 ms)
+  G(z) = z^-1 (0.35372 z^-1 + 0.08511 z^-2) / (1 - 0.79749 z^-1)
+  y[k] = 0.79749 y[k-1] + 0.35372 u[k-2] + 0.08511 u[k-3]   (em desvio do ponto de operação)
+  polo discreto z = 0.79749  (polo contínuo s = -4.526)
+
+Ziegler-Nichols, curva de reação (Tabela II de Razali et al., 2019)
+  tipo         Kc    Ti [s]    Td [s]  |        Kp        Ki        Kd   (Kp=Kc, Ki=Kc/Ti, Kd=Kc*Td)
+  P         1.682         —         —  |     1.682         0         0
+  PI        1.514    0.2019         —  |     1.514     7.499         0
+  PID       2.018    0.1212   0.03031  |     2.018     16.65   0.06118
+  Unidades: Kc em %/RPM; Ki em %/(RPM*s); Kd em %*s/RPM.
+  AVISO: theta < Ts. O tempo morto é menor que um período, então
+  Ziegler-Nichols dá ganhos muito altos e a medida de theta fica
+  dominada pela incerteza do instante do degrau. Considere
+  --atraso-zoh, que soma Ts/2 ao atraso do segurador de ordem zero.
+
+Simulação em malha fechada (PID do v0, saturação 0..50 %, setpoint 43.31 RPM)
+  tipo   sobressinal  t_acomod 2%  erro regime  % saturado
+  P             2.4%  não acomoda            7          5%
+  PI           11.2%       2.05 s      0.00483          5%
+  PID          23.9%  não acomoda         4.15         30%
+  Obs.: o modelo é linear em torno do ponto de operação e não inclui
+  a zona morta nem o atraso extra da medição de velocidade por média
+(Sintonia com theta + Ts/2 = 0.06062 s)
+  no intervalo (cerca de Ts/2). Confirme os ganhos na bancada.

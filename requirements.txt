@@ -1,0 +1,6 @@
+# Dependências Python do projeto.
+# Na Raspberry Pi, a lgpio vem do apt:  sudo apt install -y python3-lgpio
+#
+# Análise (pid/analise/): opcional. Sem o matplotlib, identificacao_zn.py
+# continua funcionando, mas não gera os gráficos.
+matplotlib
