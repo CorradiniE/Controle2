@@ -28,14 +28,21 @@ Controlador digital de velocidade (RPM) de um motor DC, rodando na Raspberry Pi,
 | Alimentação | Fonte externa para o motor (GND comum com a Pi) |
 | Bancada | Multímetro, protoboard, resistores (para divisor de tensão se necessário) |
 
-**Pinagem** (preencher quando definida — fonte única de verdade, o código deve importar daqui ou de `pid/config.py`)
-| Sinal | GPIO (BCM) | Pino físico |
-|---|---|---|
-| L298N ENA (PWM) | _a definir_ | |
-| L298N IN1 | _a definir_ | |
-| L298N IN2 | _a definir_ | |
-| Encoder canal A | _a definir_ | |
-| Encoder canal B | _a definir_ | |
+**Pinagem** (conferida na bancada em 2026-11-18. É a fonte única de verdade: o código deve
+importar daqui ou de `pid/config.py`)
+| Sinal | GPIO (BCM) | Pino físico | Observação |
+|---|---|---|---|
+| L298N ENA (PWM) | 18 | 12 | PWM a 1 kHz; jumper ENA **retirado** |
+| L298N IN1 | 23 | 16 | |
+| L298N IN2 | 24 | 18 | |
+| Encoder canal A (C1) | 17 | 11 | fio amarelo, pull-up interno |
+| Encoder canal B (C2) | 27 | 13 | fio verde, pull-up interno |
+| Encoder VCC | — | 1 (3,3 V) | fio azul |
+| Encoder GND | — | 9 | fio preto |
+| L298N GND | — | 6 | mesmo borne do negativo da fonte externa |
+
+Motor: vermelho → OUT1, branco → OUT2. Fonte externa: (+) → borne +12V do L298N,
+(−) → GND do L298N. **Nada** ligado aos pinos 2 e 4 (5 V) da Pi nem ao borne +5V do L298N.
 
 **Base bibliográfica obrigatória** (o método e a discussão do relatório devem se apoiar nela):
 - Kolya et al. (2021)
@@ -84,6 +91,29 @@ resultados atribuídos a esses artigos — se precisar de algo deles, peça o tr
 
 Se a estrutura existente divergir desta, siga a que existe e atualize este arquivo.
 
+### Código antigo (`controle_antigo/`) e versões
+
+- `controle_antigo/` é a **v0**: o código que já funcionava antes do repositório.
+  **Por enquanto (decisão de 2026-11-19), a v0 recebe correções diretas**, com foco em
+  simplicidade e em ser fácil de ajustar e entender. A v1 começa depois. O estado
+  original da v0 fica no commit `c7e9ecc` ("Código antigo"), que serve de base de
+  comparação.
+- Calibração e sinal do encoder ficam **só** em `controle_antigo/hardware.py`
+  (`CONTAGENS_POR_VOLTA`, `SINAL_ENCODER`, `contagens_para_rpm`).
+- O painel grava os ensaios direto em `pid/dados/`, com cabeçalho `#`. Na Pi, use o clone
+  do repositório (`~/Controle2`) para que os CSVs possam ser commitados de lá.
+- Melhorias são feitas em cima dela em **versões numeradas (v1, v2, v3…)**, cada uma
+  comparável com a anterior e com a v0 (ex.: `git diff --no-index <arquivo_v0> <arquivo_v1>`).
+  Cada versão deve registrar o que mudou e por quê (material para o relatório).
+- Conteúdo da v0 (ordem de uso em `controle_antigo/LEIA-ME.txt`):
+  `girar.py` (teste mínimo da ponte H), `contar_pulsos.py` (canais do encoder com o eixo
+  girado à mão), `teste_motor.py` (malha aberta interativa), `calibrar_encoder.py`
+  (contagens por volta), `painel.py` + `painel.html` (painel web com malha aberta, PID e
+  gravação de CSV), `hardware.py` (pinos, `DUTY_MAX`, classes `Motor` e `Encoder`),
+  `pid.py` (PID discreto).
+- Pontos em aberto na v0: `DUTY_MAX = 50` ainda não medido com multímetro, calibração
+  do encoder preliminar e configuração misturada com o acesso ao GPIO em `hardware.py`.
+
 ## Regras de engenharia
 
 - **Separar lógica de hardware.** `pid.py` não importa nada de GPIO; recebe medida e
@@ -97,8 +127,16 @@ Se a estrutura existente divergir desta, siga a que existe e atualize este arqui
 - Segurança: GPIO da Pi é **3,3 V e não tolera 5 V**. Antes de sugerir qualquer ligação,
   conferir níveis de tensão. Sempre GND comum entre Pi, L298N e fonte. Código deve
   parar o motor (PWM = 0) ao sair, inclusive em Ctrl+C/exceção.
-- Dependências em `requirements.txt`. Registrar aqui a biblioteca de GPIO escolhida:
-  _a definir_.
+- Dependências em `requirements.txt`. Biblioteca de GPIO escolhida: **`lgpio`**
+  (`sudo apt install -y python3-lgpio`, chip `gpiochip0` na Pi 4). Encoder lido por
+  callbacks nas duas bordas dos dois canais (quadratura 4x); PWM por `lgpio.tx_pwm`.
+  Só um script pode usar os GPIO por vez.
+- Ts da v0: **0,05 s (20 Hz)**, definido em `controle_antigo/painel.py`.
+- Discretização do PID na v0 (`controle_antigo/pid.py`): forma posicional; integral por
+  Euler retangular (`I += Ki·e·T`); derivada sobre a medida (não sobre o erro) com filtro
+  passa-baixa de 1ª ordem (`alfa_d = 0,7`); anti-windup por integração condicional;
+  saída saturada entre 0 e 100 %. Relação com os artigos: `Kp = Kc`, `Ki = Kc/Ti`,
+  `Kd = Kc·Td`.
 
 ## Como trabalhar comigo (Claude)
 
@@ -127,5 +165,40 @@ Se a estrutura existente divergir desta, siga a que existe e atualize este arqui
 
 _Atualize a cada etapa concluída (data — o quê — quem)._
 
-- PID: _preencher (ex.: ligação do L298N testada? encoder lendo? malha aberta medida?)_
+- PID:
+  - 2026-11-18 — fiação conferida na bancada, igual à de `controle_antigo/LEIA-ME.txt`
+    (pinagem acima) — grupo.
+  - 2026-11-19 — `calibrar_encoder.py` (duty 30 %, 10 voltas, ~33 RPM): média de
+    **3420,8 contagens/volta (4x)**, ou seja, 855,2 pulsos/volta em 1 canal. Desvio entre
+    voltas de 181,6 (5,3 %), atribuído ao tempo de reação no Enter. **Valor preliminar:
+    `CONTAGENS_POR_VOLTA = 3421`**, a confirmar girando o eixo à mão com `contar_pulsos.py`.
+    — grupo.
+  - 2026-11-19 — painel v0 acessível em **`http://rasp4.local:8000`** (hostname da Pi:
+    `RASP4`). O `raspberrypi.local` que o `painel.py` sugere não funciona nesta Pi. Para
+    o painel abrir, o `painel.py` precisa estar rodando. — grupo.
+  - 2026-11-19 — painel aberto no navegador da própria Pi. Acesso pelo PC ainda não testado.
+  - 2026-11-19 — ensaio de malha aberta, degrau de 20 % para 35 %
+    (`pid/dados/2026-11-19_malha_aberta_degrau_20a35.csv`):
+    - **O encoder está com o sinal invertido**: a velocidade sai negativa no sentido +1.
+      O painel precisa de `SINAL_ENCODER = -1` antes do modo PID.
+    - Ts real de 50,02 ms, desvio de 0,6 ms e máximo de 65 ms.
+    - Modelo pelo método dos dois pontos (fit de 93 %):
+      **G(s) = 2,17·e^(−0,036 s)/(0,221 s + 1)**, com K em RPM/%. A tangente deu
+      τ = 0,36 s, mas com fit de só 80 %.
+    - θ é menor que Ts (±25 ms de incerteza), então o tempo morto é praticamente não
+      mensurável com Ts = 50 ms.
+    - Na simulação, os ganhos ZN calculados com o θ medido fazem a malha oscilar.
+      Calculados com θ + Ts/2 (`--atraso-zoh`), o PI estabiliza:
+      Kp = 1,51, Ki = 7,50, Kd = 0, com cerca de 11 % de sobressinal e acomodação em ~2 s.
+      O PID de ZN continua oscilando.
+    - Checagem: 10,8 RPM a 20 % e 43,3 RPM a 35 %. A reta prevê 32,5 RPM a 30 %, e a
+      calibração mediu 33.
+    - Segurar o eixo à mão derrubou a velocidade de ~44,5 para ~34–38 RPM em malha
+      aberta. Esse dado serve de comparação para a malha fechada.
+    — grupo.
+  - 2026-11-19 — v0 corrigida: `CONTAGENS_POR_VOLTA = 3421` e `SINAL_ENCODER = -1` em
+    `hardware.py`. Endereço do painel pelo hostname real. CSVs com cabeçalho, gravados
+    em `pid/dados/`.
+  - Pendente: confirmar a calibração, medir `DUTY_MAX`, primeiro ensaio em malha fechada
+    (PI), acessar o painel pelo PC.
 - SSH Bluetooth: _preencher (ex.: rede BT sobe no boot? IP/porta conferidos?)_
