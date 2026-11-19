@@ -5,9 +5,10 @@ painel.py - Painel web de monitoramento e controle do motor.
 Roda o laco de controle com periodo fixo e serve uma pagina com graficos
 em tempo real. Precisa do arquivo painel.html na mesma pasta.
 
-Acesso:
+Acesso (o painel.py precisa estar rodando):
   - Navegador da propria Pi:        http://localhost:8000
-  - PC na mesma rede:               http://raspberrypi.local:8000 (ou IP da Pi)
+  - Pela rede:                      http://<hostname>.local:8000
+                                    (nesta Pi: http://rasp4.local:8000)
   - PC via tunel SSH:               ssh -L 8000:localhost:8000 usuario@IP_DA_PI
                                     e abrir http://localhost:8000 no PC
 
@@ -16,13 +17,16 @@ Modos:
   manual - malha aberta: duty fixo escolhido no painel
   pid    - malha fechada: o PID calcula o duty a cada periodo
 
-Cada ensaio (manual ou PID) e gravado em CSV na pasta ensaios/.
+Cada ensaio (manual ou PID) e gravado em CSV na pasta pid/dados/ do
+repositorio, com um cabecalho de comentarios (#) descrevendo as condicoes.
+Calibracao e sinal do encoder ficam em hardware.py.
 Encerrar com Ctrl+C (o motor e parado automaticamente).
 """
 
 import csv
 import json
 import os
+import socket
 import threading
 import time
 from collections import deque
@@ -32,18 +36,17 @@ from urllib.parse import parse_qs, urlparse
 
 import lgpio
 
-from hardware import CHIP, DUTY_MAX, Encoder, Motor
+from hardware import (CHIP, CONTAGENS_POR_VOLTA, DUTY_MAX, SINAL_ENCODER, Encoder,
+                      Motor, contagens_para_rpm)
 from pid import PID
 
 # ---------------- Configuracao ----------------
-CONTAGENS_POR_VOLTA = None  # Valor do calibrar_encoder.py. None = ainda nao calibrado
-SINAL_ENCODER = +1          # Troque para -1 se a velocidade aparecer negativa no sentido direto
 PERIODO = 0.05              # Periodo de amostragem do controle, em s (20 Hz)
 PORTA = 8000
 HISTORICO_MAX = 6000        # Amostras mantidas na memoria (5 min a 20 Hz)
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
-PASTA_ENSAIOS = os.path.join(PASTA, "ensaios")
+PASTA_ENSAIOS = os.path.normpath(os.path.join(PASTA, "..", "pid", "dados"))
 ARQUIVO_HTML = os.path.join(PASTA, "painel.html")
 
 
@@ -54,7 +57,7 @@ class Controlador:
         self.enc = Encoder(self.h)
         self.pid = PID(kp=0.0, ki=0.0, kd=0.0, periodo=PERIODO,
                        saida_min=0.0, saida_max=DUTY_MAX)
-        self.unidade = "RPM" if CONTAGENS_POR_VOLTA else "contagens/s"
+        self.unidade = "RPM"
 
         self.trava = threading.Lock()
         self.modo = "parado"
@@ -91,9 +94,8 @@ class Controlador:
             # Medicao: contagens no intervalo -> velocidade
             agora = time.monotonic()
             c = self.enc.contagem()
-            taxa = SINAL_ENCODER * (c - c_ant) / (agora - t_ant)   # contagens/s
+            vel = contagens_para_rpm((c - c_ant) / (agora - t_ant))
             c_ant, t_ant = c, agora
-            vel = taxa * 60.0 / CONTAGENS_POR_VOLTA if CONTAGENS_POR_VOLTA else taxa
 
             with self.trava:
                 self.velocidade = vel
@@ -101,7 +103,7 @@ class Controlador:
                     if vel < -10:
                         # Realimentacao com sinal trocado faria o PID disparar
                         self._parar("Velocidade negativa no modo PID. "
-                                    "Troque SINAL_ENCODER em painel.py.")
+                                    "Troque SINAL_ENCODER em hardware.py.")
                     else:
                         self.erro = self.setpoint - vel
                         u = self.pid.atualizar(self.setpoint, vel)
@@ -127,6 +129,14 @@ class Controlador:
         self.nome_arquivo = f"{modo}_{datetime.now():%Y%m%d_%H%M%S}.csv"
         caminho = os.path.join(PASTA_ENSAIOS, self.nome_arquivo)
         self.arquivo = open(caminho, "w", newline="", buffering=1)
+        # Cabecalho com as condicoes do ensaio (linhas '#' sao ignoradas na analise)
+        self.arquivo.write(
+            f"# Ensaio {modo} - {datetime.now():%Y-%m-%d %H:%M:%S} - painel v0\n"
+            f"# Ts nominal = {PERIODO} s | DUTY_MAX = {DUTY_MAX} % | "
+            f"CONTAGENS_POR_VOLTA = {CONTAGENS_POR_VOLTA} | "
+            f"SINAL_ENCODER = {SINAL_ENCODER}\n"
+            f"# Ganhos do PID: colunas kp, ki, kd (registradas a cada amostra)\n"
+            f"# Condicoes/observacoes: (anotar aqui: carga, fonte, perturbacoes...)\n")
         self.escritor = csv.writer(self.arquivo)
         self.escritor.writerow(["tempo_s", "modo", "setpoint", f"velocidade_{self.unidade}",
                                 "duty_pct", "erro", "kp", "ki", "kd"])
@@ -169,9 +179,6 @@ class Controlador:
                         self.mensagem += f" (limitado por DUTY_MAX = {DUTY_MAX}%)"
 
                 elif acao == "pid":
-                    if not CONTAGENS_POR_VOLTA:
-                        raise ValueError("Defina CONTAGENS_POR_VOLTA em painel.py "
-                                         "antes de usar o PID.")
                     sp, kp, ki, kd = (float(dados[k]) for k in ("setpoint", "kp", "ki", "kd"))
                     if sp <= 0 or min(kp, ki, kd) < 0:
                         raise ValueError("O setpoint deve ser maior que 0 e os ganhos, "
@@ -211,7 +218,7 @@ class Controlador:
                 "erro": self.erro,
                 "kp": self.pid.kp, "ki": self.pid.ki, "kd": self.pid.kd,
                 "duty_max": DUTY_MAX,
-                "pid_disponivel": bool(CONTAGENS_POR_VOLTA),
+                "pid_disponivel": True,
                 "mensagem": self.mensagem,
                 "arquivo": self.nome_arquivo,
                 "amostras": [a for a in self.historico if a[0] > desde],
@@ -273,8 +280,10 @@ def criar_handler(ctrl):
 def main():
     ctrl = Controlador()
     servidor = ThreadingHTTPServer(("0.0.0.0", PORTA), criar_handler(ctrl))
+    nome = socket.gethostname().lower()
     print(f"Painel no ar: http://localhost:{PORTA} (na Pi) "
-          f"ou http://raspberrypi.local:{PORTA} (na rede)")
+          f"ou http://{nome}.local:{PORTA} (na rede)")
+    print(f"Ensaios gravados em: {PASTA_ENSAIOS}")
     print("Ctrl+C para encerrar.")
     try:
         servidor.serve_forever()

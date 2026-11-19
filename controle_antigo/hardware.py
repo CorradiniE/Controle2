@@ -34,6 +34,21 @@ FREQ_PWM = 1000     # Frequencia do PWM no ENA, em Hz
 # conforme o procedimento do guia. Nenhum comando passa deste valor.
 DUTY_MAX = 50
 
+# CALIBRACAO DO ENCODER - unico lugar onde estes valores ficam.
+# Contagens 4x por volta do eixo de SAIDA, medidas com calibrar_encoder.py
+# em 2026-11-19 (media de 10 voltas; valor preliminar, a confirmar girando
+# o eixo a mao com contar_pulsos.py).
+CONTAGENS_POR_VOLTA = 3421
+
+# Sinal da contagem: no sentido +1 do motor a contagem DIMINUI (ensaio de
+# 2026-11-19), entao multiplicamos por -1 para a velocidade sair positiva.
+SINAL_ENCODER = -1
+
+
+def contagens_para_rpm(contagens_por_s):
+    """Converte a taxa do encoder (contagens/s) em RPM do eixo de saida."""
+    return SINAL_ENCODER * contagens_por_s * 60.0 / CONTAGENS_POR_VOLTA
+
 
 class Motor:
     """Controla o motor pela ponte A do L298N."""

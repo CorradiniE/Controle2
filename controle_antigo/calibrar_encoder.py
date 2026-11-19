@@ -57,7 +57,7 @@ def main():
     print(f"Desvio padrao           : {statistics.stdev(por_volta):.1f}")
     print(f"Rotacao durante o teste : {voltas * 60 / tempo:.1f} RPM")
     print(f"Pulsos por volta, 1 canal (1x): {media / 4:.1f}")
-    print(f"\nValor a usar: CONTAGENS_POR_VOLTA = {round(media)}")
+    print(f"\nValor a usar em hardware.py: CONTAGENS_POR_VOLTA = {round(media)}")
 
 
 if __name__ == "__main__":

@@ -12,10 +12,7 @@ import time
 
 import lgpio
 
-from hardware import CHIP, DUTY_MAX, Encoder, Motor
-
-# Preencher depois de rodar calibrar_encoder.py (None = ainda desconhecido)
-CONTAGENS_POR_VOLTA = None
+from hardware import CHIP, DUTY_MAX, Encoder, Motor, contagens_para_rpm
 
 
 def medir(enc, segundos=2.0):
@@ -28,11 +25,9 @@ def medir(enc, segundos=2.0):
 
 def mostrar(enc, motor):
     taxa = medir(enc)
-    texto = f"duty {motor.duty:5.1f}% | {taxa:9.1f} contagens/s | erros {enc.erros()}"
-    if CONTAGENS_POR_VOLTA:
-        rpm = taxa * 60 / CONTAGENS_POR_VOLTA
-        texto += f" | {rpm:6.1f} RPM"
-    print(texto)
+    rpm = contagens_para_rpm(taxa)
+    print(f"duty {motor.duty:5.1f}% | {taxa:9.1f} contagens/s | {rpm:6.1f} RPM "
+          f"| erros {enc.erros()}")
 
 
 def main():
