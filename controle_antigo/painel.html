@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controle de rotação</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 1100px;
+         padding: 16px; background: #f5f6f8; color: #222; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  .modo { padding: 6px 14px; border-radius: 999px; font-weight: 600; background: #e3e5e8; }
+  .modo.manual { background: #fff1d6; color: #7a4b00; }
+  .modo.pid { background: #dff3e4; color: #1d5e2c; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  .card { background: #fff; border: 1px solid #dde0e4; border-radius: 10px; padding: 10px 14px; }
+  .rotulo { font-size: .85rem; color: #666; }
+  .valor { font-size: 2.1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .unid { font-size: .85rem; color: #666; }
+  canvas { width: 100%; background: #fff; border: 1px solid #dde0e4; border-radius: 10px;
+           display: block; margin-bottom: 10px; }
+  #graf_vel { height: 300px; }
+  #graf_duty { height: 150px; }
+  .controles { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+  .painel { background: #fff; border: 1px solid #dde0e4; border-radius: 10px; padding: 12px 14px; }
+  label { display: inline-flex; flex-direction: column; font-size: .85rem; color: #555; margin: 0 8px 8px 0; }
+  input[type=number] { width: 90px; padding: 6px; font-size: 1rem; }
+  input[type=range] { width: 100%; }
+  button { padding: 8px 14px; font-size: 1rem; border-radius: 8px; border: 1px solid #888;
+           background: #fff; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #btn_parar { background: #c62828; color: #fff; border: none; font-size: 1.3rem;
+               font-weight: 700; padding: 0 28px; }
+  #msg { color: #333; min-height: 1.4em; }
+  #aviso { color: #c62828; min-height: 1.4em; }
+  @media (max-width: 760px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .controles { grid-template-columns: 1fr; }
+    #btn_parar { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Controle de rotação do motor DC</h1>
+  <span id="modo" class="modo">Parado</span>
+</header>
+
+<section class="cards">
+  <div class="card"><div class="rotulo">Velocidade medida</div>
+    <div class="valor" id="vel">—</div><div class="unid">RPM</div></div>
+  <div class="card"><div class="rotulo">Setpoint</div>
+    <div class="valor" id="sp">—</div><div class="unid">RPM</div></div>
+  <div class="card"><div class="rotulo">Erro</div>
+    <div class="valor" id="erro">—</div><div class="unid">RPM</div></div>
+  <div class="card"><div class="rotulo">Duty cycle</div>
+    <div class="valor" id="duty">—</div><div>%</div></div>
+</section>
+
+<canvas id="graf_vel"></canvas>
+<canvas id="graf_duty"></canvas>
+
+<section class="controles">
+  <div class="painel">
+    <h2>Malha aberta</h2>
+    <input type="range" id="duty_in" min="0" max="100" step="1" value="0">
+    <label>Duty (%)<input type="number" id="duty_num" min="0" max="100" step="1" value="0"></label>
+    <button id="btn_manual">Aplicar duty</button>
+  </div>
+  <div class="painel">
+    <h2>PID</h2>
+    <label>Setpoint (RPM)<input type="number" id="sp_in" min="0" step="1"></label>
+    <label>Kp<input type="number" id="kp" min="0" step="any"></label>
+    <label>Ki<input type="number" id="ki" min="0" step="any"></label>
+    <label>Kd<input type="number" id="kd" min="0" step="any"></label>
+    <div><button id="btn_pid">Iniciar / atualizar PID</button></div>
+  </div>
+  <button id="btn_parar" title="Atalho: Esc">PARAR</button>
+</section>
+
+<p id="aviso"></p>
+<p id="msg"></p>
+
+<script>
+const JANELA = 20;           // Segundos mostrados no gráfico
+let amostras = [];           // [tempo, setpoint, velocidade, duty, erro]
+let ultimoT = -1, primeiro = true, unidade = 'RPM';
+const $ = id => document.getElementById(id);
+const fmt = (v, c = 1) => (v === null || v === undefined) ? '—' : Number(v).toFixed(c);
+
+async function atualizar() {
+  try {
+    const r = await fetch('/dados?desde=' + ultimoT);
+    const d = await r.json();
+    if (d.t_atual < ultimoT) { amostras = []; ultimoT = -1; }   // Painel reiniciado
+    for (const a of d.amostras) amostras.push(a);
+    if (d.amostras.length) ultimoT = d.amostras[d.amostras.length - 1][0];
+    while (amostras.length && amostras[0][0] < d.t_atual - JANELA) amostras.shift();
+    mostrar(d);
+    desenhar(d.t_atual);
+  } catch (e) {
+    $('msg').textContent = 'Sem conexão com a Raspberry Pi.';
+  }
+  setTimeout(atualizar, 200);
+}
+
+function mostrar(d) {
+  unidade = d.unidade;
+  $('modo').textContent = { parado: 'Parado', manual: 'Malha aberta', pid: 'PID' }[d.modo];
+  $('modo').className = 'modo ' + d.modo;
+  $('vel').textContent = fmt(d.velocidade);
+  $('sp').textContent = d.modo === 'pid' ? fmt(d.setpoint) : '—';
+  $('erro').textContent = d.modo === 'pid' ? fmt(d.erro) : '—';
+  $('duty').textContent = fmt(d.duty);
+  document.querySelectorAll('.unid').forEach(e => e.textContent = d.unidade);
+  $('msg').textContent = d.mensagem + (d.arquivo ? '   |   Gravando: ' + d.arquivo : '');
+  $('btn_pid').disabled = !d.pid_disponivel;
+  if (primeiro) {
+    $('duty_in').max = d.duty_max; $('duty_num').max = d.duty_max;
+    $('kp').value = d.kp; $('ki').value = d.ki; $('kd').value = d.kd;
+    if (d.setpoint) $('sp_in').value = d.setpoint;
+    primeiro = false;
+  }
+}
+
+function grafico(id, series, tAtual, yMinFixo, yMaxFixo, titulo) {
+  const c = $(id), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const m = { esq: 56, dir: 12, cima: 28, baixo: 24 };
+
+  let ymin = yMinFixo, ymax = yMaxFixo;
+  if (ymax === undefined) {
+    ymin = 0; ymax = 10;
+    for (const a of amostras) for (const s of series) {
+      const v = a[s.idx];
+      if (v !== null) { ymax = Math.max(ymax, v); ymin = Math.min(ymin, v); }
+    }
+    ymax *= 1.15;
+  }
+  const t0 = tAtual - JANELA;
+  const X = t => m.esq + (t - t0) / JANELA * (w - m.esq - m.dir);
+  const Y = v => h - m.baixo - (v - ymin) / (ymax - ymin) * (h - m.cima - m.baixo);
+
+  g.font = '12px system-ui, sans-serif'; g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = ymin + (ymax - ymin) * i / 4, y = Y(v);
+    g.strokeStyle = '#e6e8eb'; g.beginPath(); g.moveTo(m.esq, y); g.lineTo(w - m.dir, y); g.stroke();
+    g.fillStyle = '#666'; g.fillText(v.toFixed(0), 6, y + 4);
+  }
+  for (let s = 0; s <= JANELA; s += 5) g.fillText((s - JANELA) + ' s', X(t0 + s) - 14, h - 6);
+
+  for (const s of series) {
+    g.strokeStyle = s.cor; g.lineWidth = 2; g.setLineDash(s.tracejado ? [7, 5] : []);
+    g.beginPath(); let iniciou = false;
+    for (const a of amostras) {
+      const v = a[s.idx];
+      if (v === null) { iniciou = false; continue; }
+      const x = X(a[0]), y = Y(v);
+      if (!iniciou) { g.moveTo(x, y); iniciou = true; } else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  g.setLineDash([]);
+
+  g.fillStyle = '#333'; g.font = '600 13px system-ui, sans-serif'; g.fillText(titulo, m.esq, 18);
+  let lx = m.esq + g.measureText(titulo).width + 20;
+  g.font = '12px system-ui, sans-serif';
+  for (const s of series) {
+    g.fillStyle = s.cor; g.fillRect(lx, 12, 16, 3);
+    g.fillStyle = '#333'; g.fillText(s.nome, lx + 20, 18);
+    lx += g.measureText(s.nome).width + 44;
+  }
+}
+
+function desenhar(tAtual) {
+  grafico('graf_vel', [
+    { idx: 1, cor: '#c62828', tracejado: true, nome: 'Setpoint' },
+    { idx: 2, cor: '#1565c0', nome: 'Velocidade medida' }
+  ], tAtual, undefined, undefined, 'Velocidade (' + unidade + ')');
+  grafico('graf_duty', [
+    { idx: 3, cor: '#2e7d32', nome: 'Duty aplicado' }
+  ], tAtual, 0, 100, 'Duty cycle (%)');
+}
+
+async function enviar(obj) {
+  $('aviso').textContent = '';
+  try {
+    const r = await fetch('/comando', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj)
+    });
+    const d = await r.json();
+    $('msg').textContent = d.mensagem;
+  } catch (e) {
+    $('aviso').textContent = 'Não foi possível enviar o comando.';
+  }
+}
+
+$('duty_in').oninput = () => { $('duty_num').value = $('duty_in').value; };
+$('duty_num').oninput = () => { $('duty_in').value = $('duty_num').value; $('aviso').textContent = ''; };
+
+$('btn_manual').onclick = () => {
+  const v = parseFloat($('duty_num').value);
+  if (isNaN(v)) { $('aviso').textContent = 'Informe o duty antes de aplicar.'; return; }
+  enviar({ acao: 'manual', duty: v });
+};
+
+$('btn_pid').onclick = () => {
+  const cmd = { acao: 'pid' };
+  const campos = { setpoint: 'sp_in', kp: 'kp', ki: 'ki', kd: 'kd' };
+  for (const [chave, id] of Object.entries(campos)) {
+    const v = parseFloat($(id).value);
+    if (isNaN(v)) { $('aviso').textContent = 'Preencha setpoint, Kp, Ki e Kd.'; return; }
+    cmd[chave] = v;
+  }
+  enviar(cmd);
+};
+
+['sp_in', 'kp', 'ki', 'kd'].forEach(id => $(id).oninput = () => { $('aviso').textContent = ''; });
+$('btn_parar').onclick = () => enviar({ acao: 'parar' });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') enviar({ acao: 'parar' }); });
+
+atualizar();
+</script>
+</body>
+</html>
