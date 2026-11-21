@@ -65,7 +65,10 @@ resultados atribuídos a esses artigos — se precisar de algo deles, peça o tr
   de setup — para qualquer pessoa do grupo conseguir reproduzir.
 - **Nunca** commitar chaves SSH, senhas ou endereços MAC pessoais sem necessidade.
 
-## Estrutura do repositório (proposta)
+## Estrutura do repositório (proposta para a v1)
+
+Hoje o código que roda na Pi está em `controle_antigo/` (v0). De `pid/`, só existem
+`dados/`, `analise/` e `testes/`. A árvore abaixo é o alvo da v1.
 
 ```
 .
@@ -151,15 +154,36 @@ Se a estrutura existente divergir desta, siga a que existe e atualize este arqui
 
 ## Fluxo Git / GitHub (trabalho em grupo)
 
-- `main` é protegida: **nada de commit direto**. Uma branch por tarefa:
-  `pid/<descricao>`, `ssh/<descricao>`, `docs/<descricao>`.
+O passo a passo completo, para o grupo, está no [`README.md`](README.md). Resumo:
+
+- **Prática atual (decisão de 2026-11-19): commit e push direto na `main`.** Branches e
+  Pull Requests (`pid/...`, `ssh/...`, `docs/...`) ficam para mudanças grandes, como a v1.
+  Antes de commitar ou dar push em nome do usuário, mostre as mudanças e peça o ok.
+- **Três cópias do repositório:**
+  - **GitHub** (`origin`);
+  - **PC** (Windows);
+  - **Pi** (`~/Controle2`), que **não tem internet** durante os ensaios.
+
+  A Pi é sincronizada pelo PC, via SSH sobre a rede Bluetooth, com o remote `pi`
+  (`ssh://enzo@192.168.50.1/home/enzo/Controle2`):
+  - PC → Pi: `git push pi main`. A Pi tem `receive.denyCurrentBranch updateInstead`,
+    então a pasta dela se atualiza sozinha.
+  - Pi → PC: `git pull pi main`; depois, no PC, `git push origin main`.
+- **Código se edita no PC, nunca direto na Pi.** Na Pi só se fazem commits de CSVs de
+  ensaio. Edição direta na Pi já gerou uma história divergente: o commit `bca7488`, que
+  ficou em `~/Controle2_rasp_antigo` na Pi, com um `pid.py` e um `teste.py` ainda não
+  revisados.
+- **Autor dos commits:** e-mail **noreply** do GitHub. Com o e-mail pessoal, o GitHub
+  recusa o push (GH007). Commit ainda não enviado: corrigir com
+  `git commit --amend --reset-author --no-edit`.
+- **Relógio da Pi:** sem internet ele fica atrasado (no commit `132644a`, cerca de 2 h).
+  Isso afeta o nome dos CSVs e a data dos commits. Acerte a hora pelo PC antes dos
+  ensaios (README, seção 3.2).
 - Commits pequenos, mensagem em português no imperativo
   (ex.: `Adiciona leitura do encoder por interrupção`).
-- Toda mudança entra via **Pull Request** com: o que mudou, como foi testado
-  (PC ou Pi, com qual resultado) e prints/CSVs quando houver ensaio.
-- Antes de abrir PR: `git pull --rebase origin main`, rodar os testes de `pid/testes/`.
-- Issues do GitHub = lista de tarefas do grupo. Referenciar a issue no PR (`Closes #N`).
-- Não commitar: `__pycache__/`, `.venv/`, chaves, senhas, arquivos grandes de mídia.
+- Antes de mudar código: rodar os testes de `pid/testes/` no PC.
+- Não commitar: `__pycache__/`, `.venv/`, chaves, senhas, arquivos grandes de mídia,
+  e-mails pessoais.
 
 ## Status atual
 
@@ -221,6 +245,18 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
         velocidade volta a 43 RPM em ~1 s. Em malha aberta, a mesma perturbação deixava
         a velocidade em 34–38 RPM.
       - Bate com a previsão do roteiro (B3: sem overshoot, ~0,45 s).
-  - Pendente: confirmar a calibração, medir `DUTY_MAX`, rodar o roteiro de ganhos na
-    bancada (setpoint 40), acessar o painel pelo PC.
+  - 2026-11-20 — commit `132644a` "Adiciona ensaios do roteiro de ganhos A1-D4". Apesar
+    da mensagem, ele traz **um só ensaio PID**
+    (`pid_20261120_202620_kp1.51_ki7.5_kd0.csv`, equivalente ao B3) e dois manuais. O
+    roteiro A1–D4 ainda não foi rodado por completo. Data do commit pelo relógio
+    atrasado da Pi (20:27; no PC eram ~22:30).
+  - 2026-11-20 — `README.md` com o passo a passo completo (configuração, sessão de
+    ensaio, roteiro, análise e problemas comuns), para o grupo replicar.
+  - Pendente:
+    - confirmar a calibração;
+    - medir `DUTY_MAX`;
+    - rodar o roteiro A1–D4 completo (setpoint 40);
+    - acessar o painel pelo PC (túnel SSH);
+    - revisar `pid.py` e `teste.py` do commit `bca7488`, que estão só na Pi;
+    - v1.
 - SSH Bluetooth: _preencher (ex.: rede BT sobe no boot? IP/porta conferidos?)_
