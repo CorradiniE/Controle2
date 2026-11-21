@@ -208,6 +208,19 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
     `pid/analise/resultados/roteiro_ganhos.txt` (`pid/analise/roteiro_ganhos.py`).
     Na simulação, Kd só aumenta o ruído no duty. Faz sentido: a planta é de 1ª ordem,
     com atraso pequeno, e o PI basta.
+  - 2026-11-20 — 11 ensaios PID gravados com o painel anterior (`pid/dados/pid_20261120_*.csv`).
+    - **10 deles usaram setpoint de 80 ou 100 RPM, que o motor não alcança:** com
+      `DUTY_MAX = 50 %`, a velocidade máxima é de ~67–68 RPM. O duty ficou saturado em 50 %
+      o tempo todo, e os ganhos não tiveram efeito. Esses 10 ensaios não servem para
+      comparar ganhos. **Usar setpoint de até ~55 RPM.**
+    - **Ensaio válido:** `pid_20261120_191050.csv`, PI com Kp = 1,51, Ki = 7,5 e Kd = 0,
+      setpoint 43 RPM, partindo do repouso.
+      - Chega a 42 RPM em ~0,6 s, sem overshoot.
+      - Em regime: 43,0 RPM ± 0,5, com duty de ~31 %.
+      - Com o eixo segurado à mão (em t ≈ 10, 11, 15 e 19 s), o duty sobe até 50 % e a
+        velocidade volta a 43 RPM em ~1 s. Em malha aberta, a mesma perturbação deixava
+        a velocidade em 34–38 RPM.
+      - Bate com a previsão do roteiro (B3: sem overshoot, ~0,45 s).
   - Pendente: confirmar a calibração, medir `DUTY_MAX`, rodar o roteiro de ganhos na
-    bancada, acessar o painel pelo PC.
+    bancada (setpoint 40), acessar o painel pelo PC.
 - SSH Bluetooth: _preencher (ex.: rede BT sobe no boot? IP/porta conferidos?)_
