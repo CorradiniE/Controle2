@@ -117,29 +117,45 @@ class Controlador:
                 self.historico.append((t, sp, round(vel, 2), round(self.duty, 2), erro))
 
                 if self.escritor:
+                    # Termos do PID (em % de duty): mostram o que cada um esta fazendo
+                    termos = ([round(self.pid.ultimo_p, 3), round(self.pid.integral, 3),
+                               round(self.pid.ultimo_d, 3)] if em_pid else ["", "", ""])
                     self.escritor.writerow([
                         t, self.modo, "" if sp is None else sp, round(vel, 3),
                         round(self.duty, 3), "" if erro is None else erro,
-                        self.pid.kp, self.pid.ki, self.pid.kd])
+                        self.pid.kp, self.pid.ki, self.pid.kd] + termos)
 
     # ---------- Ensaios em CSV ----------
     def _iniciar_ensaio(self, modo):
         self._fechar_ensaio()
         os.makedirs(PASTA_ENSAIOS, exist_ok=True)
-        self.nome_arquivo = f"{modo}_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        agora = datetime.now()
+        nome = f"{modo}_{agora:%Y%m%d_%H%M%S}"
+        if modo == "pid":
+            # Ganhos no nome: cada conjunto de ganhos fica num arquivo proprio
+            nome += f"_kp{self.pid.kp:g}_ki{self.pid.ki:g}_kd{self.pid.kd:g}"
+        self.nome_arquivo = nome + ".csv"
         caminho = os.path.join(PASTA_ENSAIOS, self.nome_arquivo)
         self.arquivo = open(caminho, "w", newline="", buffering=1)
         # Cabecalho com as condicoes do ensaio (linhas '#' sao ignoradas na analise)
         self.arquivo.write(
-            f"# Ensaio {modo} - {datetime.now():%Y-%m-%d %H:%M:%S} - painel v0\n"
+            f"# Ensaio {modo} - {agora:%Y-%m-%d %H:%M:%S} - painel v0\n"
             f"# Ts nominal = {PERIODO} s | DUTY_MAX = {DUTY_MAX} % | "
             f"CONTAGENS_POR_VOLTA = {CONTAGENS_POR_VOLTA} | "
-            f"SINAL_ENCODER = {SINAL_ENCODER}\n"
-            f"# Ganhos do PID: colunas kp, ki, kd (registradas a cada amostra)\n"
-            f"# Condicoes/observacoes: (anotar aqui: carga, fonte, perturbacoes...)\n")
+            f"SINAL_ENCODER = {SINAL_ENCODER}\n")
+        if modo == "pid":
+            self.arquivo.write(
+                f"# Ganhos: Kp = {self.pid.kp:g} | Ki = {self.pid.ki:g} | "
+                f"Kd = {self.pid.kd:g} | setpoint inicial = {self.setpoint:g} RPM | "
+                f"duty no inicio = {self.duty:.1f} % | velocidade no inicio = "
+                f"{self.velocidade:.1f} RPM\n"
+                f"# Colunas p/i/d: contribuicao de cada termo do PID, em % de duty\n")
+        self.arquivo.write(
+            "# Condicoes/observacoes: (anotar aqui: carga, fonte, perturbacoes...)\n")
         self.escritor = csv.writer(self.arquivo)
         self.escritor.writerow(["tempo_s", "modo", "setpoint", f"velocidade_{self.unidade}",
-                                "duty_pct", "erro", "kp", "ki", "kd"])
+                                "duty_pct", "erro", "kp", "ki", "kd",
+                                "p_pct", "i_pct", "d_pct"])
 
     def _fechar_ensaio(self):
         if self.arquivo:
@@ -185,7 +201,9 @@ class Controlador:
                                          "maiores ou iguais a 0.")
                     if kp == ki == kd == 0:
                         raise ValueError("Informe ao menos um ganho maior que zero.")
+                    ganhos_mudaram = (kp, ki, kd) != (self.pid.kp, self.pid.ki, self.pid.kd)
                     self.pid.kp, self.pid.ki, self.pid.kd = kp, ki, kd
+                    self.setpoint = sp
                     if self.modo != "pid":
                         duty_inicial = self.duty if self.modo == "manual" else 0.0
                         if self.modo == "parado":
@@ -193,7 +211,11 @@ class Controlador:
                         self.pid.reiniciar(integral_inicial=duty_inicial)
                         self.modo = "pid"
                         self._iniciar_ensaio("pid")
-                    self.setpoint = sp
+                    elif ganhos_mudaram:
+                        # Ganhos novos com o PID ja rodando: arquivo novo, sem tranco
+                        # (a integral continua de onde estava). So o setpoint mudou:
+                        # segue no mesmo arquivo, e o degrau aparece na coluna setpoint.
+                        self._iniciar_ensaio("pid")
                     self.mensagem = (f"PID ativo: setpoint {sp:g} RPM | "
                                      f"Kp={kp:g} Ki={ki:g} Kd={kd:g}")
 

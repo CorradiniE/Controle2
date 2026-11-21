@@ -1,0 +1,25 @@
+Roteiro de ganhos - previsão por simulação (setpoint 40 RPM, partida de 20 % / 10.8 RPM, DUTY_MAX 50 %)
+Planta: G(s) = 2.17 e^(-0.036 s)/(0.221 s + 1), Ts = 0.05 s
+
+ens.    Kp    Ki    Kd | overshoot  acomod.5% erro reg.  oscil. | duty p-p c/ ruído | o que observar
+A1     0.3     0     0 |      0.0%     0.30 s     17.69     0.0 |             0.6 % | lento, sem overshoot, erro em regime grande
+A2       1     0     0 |      0.0%     0.25 s      9.21     0.0 |             2.2 % | mais rápido, erro em regime menor
+A3       3     0     0 |      7.2%     1.75 s      3.89     0.1 |            19.1 % | overshoot pequeno, ainda com erro, duty ruidoso
+A4       8     0     0 |     13.9%        não      5.70    20.8 |            50.0 % | oscilação sustentada (ganho demais)
+B1     1.5     1     0 |      0.0%     2.90 s      0.18     0.1 |             4.0 % | sem overshoot, chega devagar (integral lenta)
+B2     1.5     3     0 |      0.0%     1.10 s      0.00     0.0 |             4.4 % | sem overshoot, mais rápido
+B3     1.5   7.5     0 |      0.1%     0.45 s      0.00     0.0 |             5.1 % | referência (ZN + Ts/2): rápido, sem overshoot
+B4     1.5    15     0 |      9.1%     0.60 s      0.00     0.0 |             6.1 % | overshoot moderado
+B5     1.5    25     0 |      6.3%        não      0.01     2.2 |            21.4 % | oscilação amortecida longa
+B6     1.5    40     0 |     25.2%        não      1.95    19.7 |            41.0 % | oscilação sustentada (integral demais)
+C1     0.3   7.5     0 |     30.7%     1.10 s      0.00     0.0 |             1.2 % | overshoot grande e lento (pouco Kp para o Ki)
+C2     0.7   7.5     0 |     17.0%     0.45 s      0.00     0.0 |             2.1 % | overshoot médio
+C3       3   7.5     0 |     17.9%        não      0.47    10.9 |            38.5 % | Kp alto: oscila e o duty fica ruidoso
+D1     1.5   7.5  0.02 |      0.1%     0.45 s      0.00     0.0 |             5.8 % | quase igual ao B3
+D2     1.5   7.5  0.05 |      1.5%     0.40 s      0.00     0.0 |             6.9 % | duty mais ruidoso, overshoot pequeno
+D3     1.5   7.5   0.1 |      4.9%     0.60 s     -0.00     0.0 |             8.8 % | derivada amplifica o ruído
+D4     1.5   7.5   0.2 |     10.5%     1.55 s      0.00     0.0 |            19.9 % | Kd demais: overshoot e duty muito ruidoso
+
+overshoot em % do degrau (40 - 10,8 RPM); erro reg. e oscil. em RPM;
+duty p-p = variação pico a pico do duty em regime com ruído de 0.5 RPM na medida.
+Modelo linear: não inclui zona morta nem atrito. Confirme na bancada.

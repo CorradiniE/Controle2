@@ -199,6 +199,15 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
   - 2026-11-19 — v0 corrigida: `CONTAGENS_POR_VOLTA = 3421` e `SINAL_ENCODER = -1` em
     `hardware.py`. Endereço do painel pelo hostname real. CSVs com cabeçalho, gravados
     em `pid/dados/`.
-  - Pendente: confirmar a calibração, medir `DUTY_MAX`, primeiro ensaio em malha fechada
-    (PI), acessar o painel pelo PC.
+  - 2026-11-20 — registro dos ensaios PID melhorado:
+    - cada conjunto de ganhos vira um CSV próprio, com os ganhos no nome e no cabeçalho;
+    - colunas `p_pct`, `i_pct` e `d_pct` com a contribuição de cada termo;
+    - mudar só o setpoint continua no mesmo arquivo.
+    Roteiro de 17 ensaios (grupos A: só P, B: PI variando Ki, C: PI variando Kp,
+    D: PID variando Kd), com a previsão simulada em
+    `pid/analise/resultados/roteiro_ganhos.txt` (`pid/analise/roteiro_ganhos.py`).
+    Na simulação, Kd só aumenta o ruído no duty. Faz sentido: a planta é de 1ª ordem,
+    com atraso pequeno, e o PI basta.
+  - Pendente: confirmar a calibração, medir `DUTY_MAX`, rodar o roteiro de ganhos na
+    bancada, acessar o painel pelo PC.
 - SSH Bluetooth: _preencher (ex.: rede BT sobe no boot? IP/porta conferidos?)_

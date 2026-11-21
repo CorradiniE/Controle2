@@ -36,6 +36,8 @@ class PID:
         self.integral = min(max(integral_inicial, self.saida_min), self.saida_max)
         self.medida_anterior = None
         self.d_filtrado = 0.0
+        self.ultimo_p = 0.0           # Ultimos termos calculados (para o registro)
+        self.ultimo_d = 0.0
 
     def atualizar(self, setpoint, medida):
         """Calcula a nova saida. Deve ser chamado uma vez a cada periodo T."""
@@ -65,5 +67,6 @@ class PID:
             self.integral = integral_nova
 
         # Saida final, saturada no intervalo permitido
+        self.ultimo_p, self.ultimo_d = p, d
         u = p + self.integral + d
         return min(max(u, self.saida_min), self.saida_max)
