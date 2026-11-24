@@ -1,5 +1,10 @@
 # Controle Digital — Trabalho prático
 
+> **Branch `Projeto_Controle_Python`:** versão do projeto com o controlador e o painel
+> em **Python** (`controle_antigo/`, Ts = 50 ms), preservada como estava em 2026-11-24.
+> A versão final do projeto, com o controlador em **C**, está na branch `main`.
+> Os ensaios desta versão também estão em `pid/dados/` na `main`.
+
 Trabalho em grupo da disciplina **Controle Digital** (Engenharia da Computação):
 controle digital de velocidade (RPM) de um motor DC com PID, rodando numa
 Raspberry Pi 4. A Pi é acessada pelo PC (Windows 11) por SSH sobre uma rede
