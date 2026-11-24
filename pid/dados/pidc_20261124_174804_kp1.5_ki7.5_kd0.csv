@@ -1,0 +1,16 @@
+# Ensaio pid em C (controle_c/pid_motor.c, lgpio) - 20261124_174804
+# Ts nominal = 0.02 s | DUTY_MAX = 50 % | CONTAGENS_POR_VOLTA = 3421 | SINAL_ENCODER = -1
+# Ganhos: Kp = 1.5 | Ki = 7.5 | Kd = 0 (derivada do erro, filtro N = 10) | setpoint inicial = 40 RPM | duty no inicio = 0.0 % | velocidade no inicio = -0.0 RPM
+# Condicoes/observacoes: (anotar aqui)
+tempo_s,modo,setpoint,velocidade_RPM,duty_pct,erro,kp,ki,kd,dt_ms
+255.860,pid,40.0,-0.00,50.0,40.00,1.5,7.5,0,20.00
+255.880,pid,40.0,-3.51,50.0,43.51,1.5,7.5,0,20.00
+255.900,pid,40.0,-10.52,50.0,50.52,1.5,7.5,0,20.00
+255.920,pid,40.0,-15.79,50.0,55.79,1.5,7.5,0,20.00
+255.940,pid,40.0,-21.05,50.0,61.05,1.5,7.5,0,20.00
+255.960,pid,40.0,-26.31,50.0,66.31,1.5,7.5,0,20.00
+255.980,pid,40.0,-28.94,50.0,68.94,1.5,7.5,0,20.00
+256.000,pid,40.0,-33.32,50.0,73.32,1.5,7.5,0,20.00
+256.020,pid,40.0,-35.96,50.0,75.96,1.5,7.5,0,20.00
+256.040,pid,40.0,-38.59,50.0,78.59,1.5,7.5,0,20.00
+256.060,pid,40.0,-42.09,50.0,82.09,1.5,7.5,0,20.00
