@@ -173,12 +173,13 @@ Esperado no terminal 1: `Parado, esperando comandos do painel...`. No terminal 2
 
 ### 3.5 Abrir o painel
 
-- Pelo navegador da Pi: `http://localhost:8000`.
-- Pelo PC, abra mais um PowerShell e crie um túnel:
-  ```powershell
-  ssh -L 8000:localhost:8000 enzo@192.168.50.1
-  ```
-  Depois abra `http://localhost:8000` no navegador do PC.
+- **Pelo PC: `http://192.168.50.1:8000`.** Funciona direto pela rede Bluetooth.
+- `http://rasp4.local:8000` também funciona no Windows, mas o navegador pode não
+  achar o nome (erro `DNS_PROBE_FINISHED_NXDOMAIN`) se o DNS seguro
+  (DNS-over-HTTPS) ou a VPN dele estiverem ligados. Nesse caso, use o IP.
+- Pelo navegador da própria Pi: `http://localhost:8000`.
+- `http://localhost:8000` **no PC** só funciona com um túnel SSH aberto
+  (`ssh -L 8000:localhost:8000 enzo@192.168.50.1`); sem ele, dá `ERR_CONNECTION_REFUSED`.
 
 ### 3.6 Fazer um ensaio
 
@@ -281,7 +282,8 @@ Os resultados vão para `pid/analise/resultados/`.
 | `pid_motor`: `GPIO ocupado` | Outro programa está usando os GPIO | `pgrep -af "pid_motor\|python"` e encerre o outro |
 | `pid_motor`: `Porta UDP 5006 ocupada` | Já existe outro `pid_motor` rodando | `pkill pid_motor` |
 | `lgpio.h: No such file` / `pigpio.h: No such file` | Falta o `liblgpio-dev`; a pigpio não existe no trixie | `sudo apt install -y liblgpio-dev` pela ponte SSH (2.4) |
-| Navegador: "site can't be reached" / `raspberrypi.local` | O nome da Pi é `RASP4`, e o painel precisa estar rodando | `localhost:8000` na Pi, ou o túnel SSH no PC (3.5) |
+| `DNS_PROBE_FINISHED_NXDOMAIN` em `rasp4.local` (mas `ping rasp4.local` funciona) | DNS seguro ou VPN do navegador | Use `http://192.168.50.1:8000`, ou desligue o DNS-over-HTTPS do navegador |
+| `ERR_CONNECTION_REFUSED` | No PC: `localhost` é o próprio PC. Na Pi: o `painel_c.py` não está rodando | No PC, use `http://192.168.50.1:8000`. Na Pi, suba o painel (3.4) |
 | "Velocidade negativa: confira SINAL_ENCODER" | Sinal do encoder invertido | `SINAL_ENCODER` em `controle_c/pid_motor.c` |
 | Duty travado em 50 % e todas as curvas iguais | Setpoint inalcançável | Use setpoint ≤ ~55 RPM |
 | `Could not resolve host: github.com` na Pi | A Pi está sem internet | Use `git push pi main` / `git pull pi main` pelo PC, ou a ponte SSH (2.4) |

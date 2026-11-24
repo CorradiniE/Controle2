@@ -201,7 +201,8 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
   - 2026-11-19 — painel v0 acessível em **`http://rasp4.local:8000`** (hostname da Pi:
     `RASP4`). O `raspberrypi.local` que o `painel.py` sugere não funciona nesta Pi. Para
     o painel abrir, o `painel.py` precisa estar rodando. — grupo.
-  - 2026-11-19 — painel aberto no navegador da própria Pi. Acesso pelo PC ainda não testado.
+  - 2026-11-19 — painel aberto **pelo PC** em `rasp4.local:8000`. Correção de
+    2026-11-24: antes eu tinha registrado "no navegador da Pi", por engano.
   - 2026-11-19 — ensaio de malha aberta, degrau de 20 % para 35 %
     (`pid/dados/2026-11-19_malha_aberta_degrau_20a35.csv`):
     - **O encoder está com o sinal invertido**: a velocidade sai negativa no sentido +1.
@@ -290,8 +291,14 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
     - Incluídos os ganhos de Ziegler–Nichols recalculados para Ts = 20 ms
       (`pid/analise/resultados/ts_20ms/`): PI com Kp = 2,01 e Ki = 13,24 (Z1,
       ~1 % de overshoot na simulação); PID com 2,68 / 29,39 / 0,061 (Z2, oscila).
+  - 2026-11-24 — **painel do C funcionando na Pi**, aberto no PC em
+    `http://192.168.50.1:8000`.
+    - No Windows, `rasp4.local` resolve para 192.168.50.1 (o `ping` funciona), mas o
+      Opera deu `DNS_PROBE_FINISHED_NXDOMAIN`, provavelmente por causa do DNS seguro
+      ou da VPN do navegador. Use o IP.
+    - `localhost:8000` no PC só funciona com túnel SSH.
   - Pendente:
-    - testar o `painel_c.py` com o `pid_motor` na Pi;
+    - rodar o roteiro de ganhos com o C (setpoint 40, Ts 20 ms);
     - confirmar a calibração;
     - medir `DUTY_MAX`;
     - rodar o roteiro A1–D4 completo (setpoint 40);
