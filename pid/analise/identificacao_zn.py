@@ -30,7 +30,7 @@ Base bibliográfica
 
 O que o script faz
 ------------------
-1. Lê um CSV de ensaio em malha aberta (formato do painel v0:
+1. Lê um CSV de ensaio em malha aberta (formato dos painéis em C e em Python:
    tempo_s, modo, setpoint, velocidade_<unidade>, duty_pct, ...).
 2. Encontra o degrau de duty e mede o Ts real (média, desvio e extremos, ou seja,
    o jitter do laço).
@@ -40,11 +40,11 @@ O que o script faz
        sensível ao ruído do encoder.
    Para cada método, calcula o "fit" do modelo contra os dados.
 4. Calcula os ganhos P, PI e PID pela Tabela II e converte para a forma usada
-   em controle_antigo/pid.py: Kp = Kc, Ki = Kc/Ti, Kd = Kc*Td.
+   no controlador (controle_c/pid_motor.c): Kp = Kc, Ki = Kc/Ti, Kd = Kc*Td.
 5. Discretiza G(s) com segurador de ordem zero (ZOH), no Ts do projeto,
    tratando atraso fracionário:
        G(z) = z^-d * (b1*z^-1 + b2*z^-2) / (1 - a*z^-1)
-6. Simula a malha fechada com o PID real do projeto (controle_antigo/pid.py:
+6. Simula a malha fechada com o PID do controlador em C (cópia em pid_c.py:
    saturação, anti-windup e filtro da derivada) e mostra sobressinal, tempo
    de acomodação e erro em regime.
 7. Se o matplotlib estiver instalado, salva os gráficos em PNG.
@@ -62,7 +62,6 @@ zona morta do motor (duty mínimo para vencer o atrito) distorce K.
 
 import argparse
 import csv
-import importlib.util
 import math
 import os
 import random
@@ -71,8 +70,8 @@ from dataclasses import dataclass, field
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", ".."))
-TS_PROJETO = 0.05      # Ts do painel v0 (controle_antigo/painel.py)
-DUTY_MAX_V0 = 50.0     # DUTY_MAX do v0 (controle_antigo/hardware.py)
+TS_PROJETO = 0.02      # Ts do controlador em C (controle_c/pid_motor.c)
+DUTY_MAX_PROJETO = 50.0  # DUTY_MAX do controlador em C
 
 # Tabela II de Razali et al. (2019): (fator de Kc, fator de Ti, fator de Td)
 TABELA_ZN = {
@@ -166,7 +165,7 @@ def localizar_degrau(ens, ts, escolha=None):
     u = ens.u
     candidatos = []
     if abs(u[0]) > 1e-9:
-        # O painel v0 só começa a gravar quando o modo manual é ligado: a 1ª
+        # O painel só começa a gravar quando o modo manual é ligado: a 1ª
         # linha já tem o duty novo e o motor estava parado (duty anterior = 0).
         candidatos.append((0, 0.0))
     candidatos += [(i, u[i - 1]) for i in range(1, len(u)) if abs(u[i] - u[i - 1]) > 1e-9]
@@ -364,20 +363,18 @@ class PlantaDiscreta:
         return self.y0 + self.dy
 
 
-def carregar_pid_v0():
-    """Importa o PID do v0 pelo caminho do arquivo (evita conflito com a pasta pid/)."""
-    caminho = os.path.join(RAIZ, "controle_antigo", "pid.py")
-    spec = importlib.util.spec_from_file_location("pid_v0", caminho)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.PID
+def carregar_pid():
+    """PID do controlador em C (cópia em Python, pid_c.py)."""
+    sys.path.insert(0, AQUI)
+    from pid_c import PIDC
+    return PIDC
 
 
 def simular_malha_fechada(gz, ganhos, y0, u0, setpoint, duracao, duty_max, PID):
     """Malha fechada com o PID do projeto. Parte do equilíbrio (u0, y0)."""
     pid = PID(ganhos["kp"], ganhos["ki"], ganhos["kd"], periodo=gz["T"],
               saida_min=0.0, saida_max=duty_max)
-    pid.reiniciar(integral_inicial=u0)
+    pid.reiniciar(integral_inicial=u0, erro_inicial=setpoint - y0)
     planta = PlantaDiscreta(gz, y0, u0)
     n = int(round(duracao / gz["T"]))
     t, y, u = [], [], []
@@ -417,7 +414,7 @@ def metricas(t, y, u, y0, setpoint, duty_max):
 # --------------------------------------------------------------------------
 # Dados sintéticos (só para demonstração e testes; NÃO são valores do motor)
 # --------------------------------------------------------------------------
-def gerar_sintetico(K=2.0, tau=0.30, theta=0.10, ts=TS_PROJETO, u0=20.0, u1=35.0,
+def gerar_sintetico(K=2.0, tau=0.30, theta=0.10, ts=0.05, u0=20.0, u1=35.0,
                     t_antes=1.0, t_depois=4.0, ruido=0.0, jitter=0.0, semente=1):
     rnd = random.Random(semente)
     n = int(round((t_antes + t_depois) / ts))
@@ -519,7 +516,7 @@ def gerar_relatorio(ens, est_ts, dg, n_deg, modelos, escolhido, zn, gz, sims,
         L.append("  contínuo e podem levar a malha discreta a oscilar. Confira na")
         L.append("  simulação abaixo e, se for o caso, teste um Ts menor ou --atraso-zoh.")
     L.append("")
-    L.append(f"Simulação em malha fechada (PID do v0, saturação 0..{duty_max:g} %,"
+    L.append(f"Simulação em malha fechada (PID do controlador em C, saturação 0..{duty_max:g} %,"
              f" setpoint {setpoint:.4g} {un})")
     L.append(f"  {'tipo':<5}{'sobressinal':>13}{'t_acomod 2%':>13}{'erro regime':>13}"
              f"{'% saturado':>12}")
@@ -620,7 +617,7 @@ def main(argv=None):
                    help="média móvel para reduzir o ruído do encoder (amostras)")
     p.add_argument("--ts", type=float, default=TS_PROJETO,
                    help="Ts usado na discretização e na simulação [s]")
-    p.add_argument("--duty-max", type=float, default=DUTY_MAX_V0,
+    p.add_argument("--duty-max", type=float, default=DUTY_MAX_PROJETO,
                    help="saturação superior do PID na simulação [%%]")
     p.add_argument("--setpoint", type=float,
                    help="setpoint da simulação (padrão: yf do ensaio)")
@@ -676,7 +673,7 @@ def main(argv=None):
     except ValueError as exc:
         print(f"ERRO na sintonia: {exc}")
     if zn:
-        PID = carregar_pid_v0()
+        PID = carregar_pid()
         for tipo, g in zn.items():
             ts_, ys_, us_ = simular_malha_fechada(gz, g, dg.y0, dg.u0, setpoint,
                                                   duracao, args.duty_max, PID)

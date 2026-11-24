@@ -1,0 +1,45 @@
+========================================================================
+IDENTIFICAÇÃO DA PLANTA (curva de reação) + SINTONIA ZIEGLER-NICHOLS
+========================================================================
+Ensaio: pid/dados/2026-11-19_malha_aberta_degrau_20a35.csv (cortado em t <= 74 s) (velocidade com sinal invertido)
+Amostras em malha aberta: 711  |  degraus encontrados: 2
+Ts real: média 50.02 ms, desvio 0.60 ms, min 48.00 ms, max 65.00 ms
+
+Degrau analisado
+  duty: 20 % -> 35 %   (delta = 15 %)
+  t_degrau ~ 70.040 s (incerteza +-Ts/2 = +-25 ms, que vai direto para theta)
+  y0 = 10.804 RPM   yf = 43.309 RPM   (Delta = 32.505 RPM)
+
+Modelo  G(s) = K e^(-theta s) / (tau s + 1)
+  método           K [RPM/%]   tau [s]  theta [s]  fit [%]
+  tangente             2.167    0.3619   0.007832     80.4
+  smith                2.167     0.221    0.03562     93.0  <- usado
+
+G(s) = 2.167 e^(-0.03562 s) / (0.221 s + 1)
+
+Discretização ZOH, T = 20 ms (theta = 2*T + 5.6 ms)
+  G(z) = z^-2 (0.13651 z^-1 + 0.051016 z^-2) / (1 - 0.91346 z^-1)
+  y[k] = 0.91346 y[k-1] + 0.13651 u[k-3] + 0.051016 u[k-4]   (em desvio do ponto de operação)
+  polo discreto z = 0.91346  (polo contínuo s = -4.526)
+
+Ziegler-Nichols, curva de reação (Tabela II de Razali et al., 2019)
+  tipo         Kc    Ti [s]    Td [s]  |        Kp        Ki        Kd   (Kp=Kc, Ki=Kc/Ti, Kd=Kc*Td)
+  P         2.235         —         —  |     2.235         0         0
+  PI        2.012    0.1519         —  |     2.012     13.24         0
+  PID       2.682   0.09125   0.02281  |     2.682     29.39   0.06118
+  Unidades: Kc em %/RPM; Ki em %/(RPM*s); Kd em %*s/RPM.
+  AVISO: theta/Ts = 1.8. O atraso que a própria amostragem
+  introduz (ZOH, cerca de Ts/2, mais a medição) é comparável ao
+  tempo morto. As fórmulas de ZN foram deduzidas para controle
+  contínuo e podem levar a malha discreta a oscilar. Confira na
+  simulação abaixo e, se for o caso, teste um Ts menor ou --atraso-zoh.
+
+Simulação em malha fechada (PID do controlador em C, saturação 0..50 %, setpoint 43.31 RPM)
+  tipo   sobressinal  t_acomod 2%  erro regime  % saturado
+  P             0.0%  não acomoda         5.56          5%
+  PI            3.5%       0.86 s    -0.000152          5%
+  PID          14.3%  não acomoda         1.27         29%
+  Obs.: o modelo é linear em torno do ponto de operação e não inclui
+  a zona morta nem o atraso extra da medição de velocidade por média
+(Sintonia com theta + Ts/2 = 0.04562 s)
+  no intervalo (cerca de Ts/2). Confirme os ganhos na bancada.

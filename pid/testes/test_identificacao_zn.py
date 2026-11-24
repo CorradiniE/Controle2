@@ -102,7 +102,7 @@ class TestMalhaFechada(unittest.TestCase):
         K, tau, theta = 2.0, 0.3, 0.1
         zn = iz.sintonia_zn(K, tau, theta)
         gz = iz.discretizar_zoh(K, tau, theta, T)
-        PID = iz.carregar_pid_v0()
+        PID = iz.carregar_pid()
         y0, u0 = K * 20.0, 20.0
         sp = y0 + 20.0
         t, y, u = iz.simular_malha_fechada(gz, zn["PI"], y0, u0, sp, 6.0, 100.0, PID)
@@ -112,8 +112,8 @@ class TestMalhaFechada(unittest.TestCase):
 
 
 class TestLeituraCsv(unittest.TestCase):
-    def test_formato_do_painel_v0(self):
-        """CSV que começa no degrau, como o painel v0 grava ao ligar o modo manual."""
+    def test_formato_do_painel(self):
+        """CSV que começa no degrau, como o painel grava ao ligar o modo manual."""
         ens = iz.gerar_sintetico(2.0, 0.3, 0.1, u0=0.0, u1=30.0, t_antes=0.0 + T)
         cab = "tempo_s,modo,setpoint,velocidade_RPM,duty_pct,erro,kp,ki,kd\n"
         with tempfile.TemporaryDirectory() as d:

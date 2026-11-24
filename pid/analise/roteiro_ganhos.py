@@ -10,7 +10,8 @@ linearizado em torno de 20 % de duty -> 10,8 RPM.
 
 Ensaio simulado (igual ao roteiro na bancada): motor em manual a 20 %, liga o
 PID com setpoint de 40 RPM, partida sem tranco (integral = 20 %), saturação
-de 0 a DUTY_MAX = 50 %. Controlador: o PID da v0 (controle_antigo/pid.py).
+de 0 a DUTY_MAX = 50 %. Controlador: o PID do controle_c/pid_motor.c (cópia em
+pid_c.py), com Ts = 20 ms.
 Também roda com ruído de medição de 0,5 RPM (desvio medido a 35 %) para ver
 quanto cada ganho amplifica o ruído no duty.
 
@@ -26,7 +27,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
 import identificacao_zn as iz  # noqa: E402
 
-K, TAU, THETA, T = 2.17, 0.221, 0.036, 0.05
+K, TAU, THETA, T = 2.17, 0.221, 0.036, 0.02
 Y0, U0, SETPOINT, DUTY_MAX = 10.8, 20.0, 40.0, 50.0
 RUIDO = 0.5          # RPM, desvio da velocidade medido em regime a 35 %
 DURACAO = 8.0        # s
@@ -39,25 +40,27 @@ ROTEIRO = [
     ("A4", "Só P", 8.0, 0, 0, "oscilação sustentada (ganho demais)"),
     ("B1", "PI, Ki varia", 1.5, 1.0, 0, "sem overshoot, chega devagar (integral lenta)"),
     ("B2", "PI, Ki varia", 1.5, 3.0, 0, "sem overshoot, mais rápido"),
-    ("B3", "PI, Ki varia", 1.5, 7.5, 0, "referência (ZN + Ts/2): rápido, sem overshoot"),
-    ("B4", "PI, Ki varia", 1.5, 15.0, 0, "overshoot moderado"),
-    ("B5", "PI, Ki varia", 1.5, 25.0, 0, "oscilação amortecida longa"),
+    ("B3", "PI, Ki varia", 1.5, 7.5, 0, "referência (ZN p/ Ts 50 ms, validado): sem overshoot"),
+    ("B4", "PI, Ki varia", 1.5, 30.0, 0, "overshoot moderado (~10 %)"),
+    ("B5", "PI, Ki varia", 1.5, 35.0, 0, "overshoot maior e oscilação que demora a sumir"),
     ("B6", "PI, Ki varia", 1.5, 40.0, 0, "oscilação sustentada (integral demais)"),
     ("C1", "PI, Kp varia", 0.3, 7.5, 0, "overshoot grande e lento (pouco Kp para o Ki)"),
     ("C2", "PI, Kp varia", 0.7, 7.5, 0, "overshoot médio"),
-    ("C3", "PI, Kp varia", 3.0, 7.5, 0, "Kp alto: oscila e o duty fica ruidoso"),
-    ("D1", "PID, Kd varia", 1.5, 7.5, 0.02, "quase igual ao B3"),
-    ("D2", "PID, Kd varia", 1.5, 7.5, 0.05, "duty mais ruidoso, overshoot pequeno"),
-    ("D3", "PID, Kd varia", 1.5, 7.5, 0.1, "derivada amplifica o ruído"),
-    ("D4", "PID, Kd varia", 1.5, 7.5, 0.2, "Kd demais: overshoot e duty muito ruidoso"),
+    ("C3", "PI, Kp varia", 4.0, 7.5, 0, "Kp alto: oscila e o duty fica ruidoso"),
+    ("D1", "PID, Kd varia", 1.5, 7.5, 0.05, "quase igual ao B3, duty um pouco mais ruidoso"),
+    ("D2", "PID, Kd varia", 1.5, 7.5, 0.1, "derivada amplifica o ruído"),
+    ("D3", "PID, Kd varia", 1.5, 7.5, 0.2, "overshoot e duty ruidoso"),
+    ("D4", "PID, Kd varia", 1.5, 7.5, 0.3, "Kd demais: oscila"),
+    ("Z1", "ZN p/ Ts 20 ms", 2.01, 13.24, 0, "PI de Ziegler-Nichols refeito p/ o C (theta + Ts/2)"),
+    ("Z2", "ZN p/ Ts 20 ms", 2.68, 29.39, 0.061, "PID de Ziegler-Nichols p/ o C"),
 ]
 
 
 def simular(kp, ki, kd, ruido=0.0, semente=3):
     rnd = random.Random(semente)
     gz = iz.discretizar_zoh(K, TAU, THETA, T)
-    pid = iz.carregar_pid_v0()(kp, ki, kd, periodo=T, saida_min=0.0, saida_max=DUTY_MAX)
-    pid.reiniciar(integral_inicial=U0)
+    pid = iz.carregar_pid()(kp, ki, kd, periodo=T, saida_min=0.0, saida_max=DUTY_MAX)
+    pid.reiniciar(integral_inicial=U0, erro_inicial=SETPOINT - Y0)
     planta = iz.PlantaDiscreta(gz, Y0, U0)
     y, ys, us = Y0, [], []
     for _ in range(int(DURACAO / T)):

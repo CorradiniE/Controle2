@@ -65,64 +65,57 @@ resultados atribuídos a esses artigos — se precisar de algo deles, peça o tr
   de setup — para qualquer pessoa do grupo conseguir reproduzir.
 - **Nunca** commitar chaves SSH, senhas ou endereços MAC pessoais sem necessidade.
 
-## Estrutura do repositório (proposta para a v1)
+## Estrutura do repositório e branches
 
-Hoje o código que roda na Pi está em `controle_antigo/` (v0). De `pid/`, só existem
-`dados/`, `analise/` e `testes/`. A árvore abaixo é o alvo da v1.
+**Decisão de 2026-11-24:** a `main` é a **versão final do projeto, com o controlador
+em C**. Tudo o que era da versão em Python (controlador, painel e ferramentas de
+bancada) foi para a branch **`Projeto_Controle_Python`**.
 
 ```
-.
+.                                   (branch main)
 ├── CLAUDE.md
-├── README.md                 # visão geral + como rodar
+├── README.md                 # passo a passo completo para o grupo
+├── requirements.txt          # dependências da análise no PC (matplotlib, opcional)
+├── controle_c/               # roda na Pi
+│   ├── pid_motor.c           # controlador em C (lgpio, Ts = 20 ms): PID, encoder, PWM,
+│   │                         #   CSV por ensaio, comandos/telemetria por UDP
+│   ├── painel_c.py           # servidor web do painel (não usa GPIO; ponte UDP)
+│   └── painel.html           # página com gráficos em tempo real
 ├── pid/
-│   ├── config.py             # pinos, Ts, ganhos, limites
-│   ├── motor.py              # acionamento PWM/direção via L298N
-│   ├── encoder.py            # leitura do encoder e cálculo de RPM
-│   ├── pid.py                # controlador PID discreto (independente de hardware)
-│   ├── main.py               # laço de controle
-│   ├── testes/               # testes que rodam no PC, sem a Pi (GPIO simulado)
-│   ├── dados/                # CSVs de ensaios (nome com data e descrição)
-│   └── analise/              # scripts/notebooks de gráficos e identificação
+│   ├── dados/                # CSVs de todos os ensaios (C e Python)
+│   ├── analise/              # roda no PC: identificação, ZN, roteiro de ganhos,
+│   │                         #   pid_c.py = cópia em Python da lei de controle do C
+│   └── testes/               # testes no PC (análise e pid_c.py)
 ├── ssh-bluetooth/
-│   ├── README.md
-│   ├── config/
-│   └── setup.sh
 └── docs/
     ├── referencias/
     └── relatorio/
 ```
 
-Se a estrutura existente divergir desta, siga a que existe e atualize este arquivo.
-
-### Código antigo (`controle_antigo/`) e versões
-
-- `controle_antigo/` é a **v0**: o código que já funcionava antes do repositório.
-  **Por enquanto (decisão de 2026-11-19), a v0 recebe correções diretas**, com foco em
-  simplicidade e em ser fácil de ajustar e entender. A v1 começa depois. O estado
-  original da v0 fica no commit `c7e9ecc` ("Código antigo"), que serve de base de
-  comparação.
-- Calibração e sinal do encoder ficam **só** em `controle_antigo/hardware.py`
-  (`CONTAGENS_POR_VOLTA`, `SINAL_ENCODER`, `contagens_para_rpm`).
-- O painel grava os ensaios direto em `pid/dados/`, com cabeçalho `#`. Na Pi, use o clone
-  do repositório (`~/Controle2`) para que os CSVs possam ser commitados de lá.
-- Melhorias são feitas em cima dela em **versões numeradas (v1, v2, v3…)**, cada uma
-  comparável com a anterior e com a v0 (ex.: `git diff --no-index <arquivo_v0> <arquivo_v1>`).
-  Cada versão deve registrar o que mudou e por quê (material para o relatório).
-- Conteúdo da v0 (ordem de uso em `controle_antigo/LEIA-ME.txt`):
-  `girar.py` (teste mínimo da ponte H), `contar_pulsos.py` (canais do encoder com o eixo
-  girado à mão), `teste_motor.py` (malha aberta interativa), `calibrar_encoder.py`
-  (contagens por volta), `painel.py` + `painel.html` (painel web com malha aberta, PID e
-  gravação de CSV), `hardware.py` (pinos, `DUTY_MAX`, classes `Motor` e `Encoder`),
-  `pid.py` (PID discreto).
-- Pontos em aberto na v0: `DUTY_MAX = 50` ainda não medido com multímetro, calibração
-  do encoder preliminar e configuração misturada com o acesso ao GPIO em `hardware.py`.
+- **`main`**: versão final (C). A pasta `controle_antigo/` saiu daqui.
+- **`Projeto_Controle_Python`**: o estado da `main` em 2026-11-24 antes da troca
+  (commit `a1ea6b0`), com um aviso no README. Contém `controle_antigo/`:
+  - controlador e painel em Python (Ts = 50 ms);
+  - ferramentas de bancada: `girar.py`, `contar_pulsos.py`, `teste_motor.py`,
+    `calibrar_encoder.py`, que **continuam sendo o jeito de recalibrar o encoder**.
+- **`Código-Controlador-C`**: o `Código PID` original do colega (FSLouredo), para
+  pigpio. Não compila no Debian 13 da Pi. Foi a base do `controle_c/pid_motor.c`.
+- O estado original da v0 em Python fica no commit `c7e9ecc` ("Código antigo").
+- Calibração e sinal do encoder, na versão em C: `PPR` e `SINAL_ENCODER` em
+  `controle_c/pid_motor.c`.
+- **A lei de controle está em dois lugares:** `pid_motor.c` (roda na Pi) e
+  `pid/analise/pid_c.py` (simulação no PC). Mudou um, mude o outro.
+- Pontos em aberto: `DUTY_MAX = 50` ainda não medido com multímetro; calibração do
+  encoder preliminar; configuração (pinos, Ts, limites) no topo do `pid_motor.c`, e não
+  num arquivo separado.
 
 ## Regras de engenharia
 
-- **Separar lógica de hardware.** `pid.py` não importa nada de GPIO; recebe medida e
-  retorna ação de controle. Isso permite testar no PC (Windows) sem a Pi.
-- **Período de amostragem (Ts) fixo e explícito** em `config.py`. Medir o Ts real no
-  laço e registrar nos logs — jitter importa para a discussão de controle digital.
+- **Separar lógica de controle e simulação.** A lei de controle do C tem uma cópia em
+  Python (`pid/analise/pid_c.py`), testada no PC sem a Pi.
+- **Período de amostragem (Ts) fixo e explícito** (`TS` em `pid_motor.c`). O Ts real é
+  medido no laço e gravado no CSV (`dt_ms`): o jitter importa para a discussão de
+  controle digital.
 - PID discreto com **saturação do PWM (0–100 %)** e **anti-windup**. Documentar a forma
   de discretização usada.
 - Todo ensaio gera um CSV em `pid/dados/` com: tempo, referência, RPM medido, ação de
@@ -130,16 +123,24 @@ Se a estrutura existente divergir desta, siga a que existe e atualize este arqui
 - Segurança: GPIO da Pi é **3,3 V e não tolera 5 V**. Antes de sugerir qualquer ligação,
   conferir níveis de tensão. Sempre GND comum entre Pi, L298N e fonte. Código deve
   parar o motor (PWM = 0) ao sair, inclusive em Ctrl+C/exceção.
-- Dependências em `requirements.txt`. Biblioteca de GPIO escolhida: **`lgpio`**
-  (`sudo apt install -y python3-lgpio`, chip `gpiochip0` na Pi 4). Encoder lido por
-  callbacks nas duas bordas dos dois canais (quadratura 4x); PWM por `lgpio.tx_pwm`.
-  Só um script pode usar os GPIO por vez.
-- Ts da v0: **0,05 s (20 Hz)**, definido em `controle_antigo/painel.py`.
-- Discretização do PID na v0 (`controle_antigo/pid.py`): forma posicional; integral por
-  Euler retangular (`I += Ki·e·T`); derivada sobre a medida (não sobre o erro) com filtro
-  passa-baixa de 1ª ordem (`alfa_d = 0,7`); anti-windup por integração condicional;
-  saída saturada entre 0 e 100 %. Relação com os artigos: `Kp = Kc`, `Ki = Kc/Ti`,
-  `Kd = Kc·Td`.
+- Biblioteca de GPIO: **`lgpio`** (C: `sudo apt install -y liblgpio-dev`, compilar com
+  `-llgpio`; chip `gpiochip0` na Pi 4). A pigpio **não existe** no Raspberry Pi OS atual
+  (Debian 13 trixie). Encoder lido por alertas nas duas bordas dos dois canais
+  (quadratura 4x); PWM por `lgTxPwm` a 1 kHz. Só um programa pode usar os GPIO por vez.
+- **Ts do controlador em C: 0,02 s (50 Hz).** Na versão em Python era 0,05 s.
+- Discretização do PID em C (`controle_c/pid_motor.c`, igual em `pid/analise/pid_c.py`):
+  - forma posicional;
+  - integral por Euler retangular (`I += Ki·e·T`);
+  - derivada **do erro**, com filtro passa-baixa de 1ª ordem
+    (`d_f += α·((e − e_ant)/T − d_f)`, com `α = N·T/(1 + N·T)` e `N = 10`);
+  - anti-windup por integração condicional;
+  - saída saturada entre 0 e `DUTY_MAX = 50 %`.
+
+  Ao entrar no modo PID, a integral começa no duty atual (sem tranco) e `e_ant = e`
+  (sem pico da derivada). Relação com os artigos: `Kp = Kc`, `Ki = Kc/Ti`, `Kd = Kc·Td`.
+- Na versão em Python (branch `Projeto_Controle_Python`), a derivada era **da medida**,
+  com `alfa_d = 0,7`. Essa diferença vale comentar no relatório.
+- Dependências do PC em `requirements.txt`.
 
 ## Como trabalhar comigo (Claude)
 
@@ -252,7 +253,45 @@ _Atualize a cada etapa concluída (data — o quê — quem)._
     atrasado da Pi (20:27; no PC eram ~22:30).
   - 2026-11-20 — `README.md` com o passo a passo completo (configuração, sessão de
     ensaio, roteiro, análise e problemas comuns), para o grupo replicar.
+  - 2026-11-24 — **controlador em C** (`controle_c/`). Base: arquivo `Código PID` da
+    branch `Código-Controlador-C` (FSLouredo), escrito para a pigpio.
+    - A pigpio não existe no Debian 13 (trixie) da Pi, então o acesso ao hardware foi
+      portado para a lgpio. Foi preciso instalar `liblgpio-dev`, pela ponte SSH
+      (`ssh -R 1080`), já que a Pi está sem Wi-Fi.
+    - **O original não era seguro para o nosso hardware:** não tinha
+      `SINAL_ENCODER = -1` (o PID dispararia até o máximo), saturava em 100 % em vez de
+      `DUTY_MAX = 50`, e usava `PPR = 374*4` em vez de 3421. Os ganhos originais
+      (2 / 40 / 0,1) oscilam no modelo do nosso motor. Ajustes marcados com `AJUSTE:`.
+    - Diferenças em relação à v0 em Python: Ts = 20 ms; derivada calculada sobre o erro
+      (e não sobre a medida), com filtro N = 10; anti-windup igual; RPM calculado com o
+      intervalo realmente medido.
+    - Primeiro ensaio (`pid/dados/pidc_20261124_154209_kp1.5_ki7.5_kd0.csv`): PI
+      1,5 / 7,5 / 0, setpoint 40 RPM, partindo do repouso, 50 s de duração.
+      - Subida de 10 % a 90 % em **0,34 s**, sem overshoot na subida.
+      - Média de 39,99 RPM na segunda metade, com duty de ~30–31 %. A velocidade
+        oscila entre 39,46 e 40,34 RPM: esse passo de 0,88 RPM é 1 contagem do encoder
+        a cada 20 ms, a resolução da medida.
+      - Quedas isoladas de uma amostra em t = 2,9, 37,6 e 43,6 s (a última até 24,6 RPM,
+        com duty de 50 %), provavelmente toques no eixo, que não foram anotados.
+      - **Jitter:** `dt_ms` com média de 19,999 ms e desvio de 0,053 ms (Python a 50 ms:
+        desvio de 0,6 ms). A última linha (17,4 ms) é a interrupção pelo Ctrl+C, que o
+        código atual já trata.
+    - Painel em tempo real para o C: `controle_c/painel_c.py` serve a mesma
+      `painel.html` e fala com o `pid_motor` por UDP local (telemetria na porta 5005,
+      comandos na 5006). Testado no PC com um `pid_motor` simulado. **Ainda não
+      testado na Pi.**
+  - 2026-11-24 — **reestruturação:** a `main` passa a ser a versão final em C, e a
+    versão em Python vai para a branch `Projeto_Controle_Python`.
+    - `painel.html` foi movida para `controle_c/`.
+    - Análise e testes passaram a simular o PID do C (`pid/analise/pid_c.py`, Ts = 20 ms).
+    - Roteiro de ganhos refeito para Ts = 20 ms. Com o período menor, a malha fica mais
+      estável, e os ganhos que mostram overshoot e oscilação mudaram: B4–B6 com Ki =
+      30, 35 e 40; C3 com Kp = 4; D com Kd = 0,05 a 0,3.
+    - Incluídos os ganhos de Ziegler–Nichols recalculados para Ts = 20 ms
+      (`pid/analise/resultados/ts_20ms/`): PI com Kp = 2,01 e Ki = 13,24 (Z1,
+      ~1 % de overshoot na simulação); PID com 2,68 / 29,39 / 0,061 (Z2, oscila).
   - Pendente:
+    - testar o `painel_c.py` com o `pid_motor` na Pi;
     - confirmar a calibração;
     - medir `DUTY_MAX`;
     - rodar o roteiro A1–D4 completo (setpoint 40);
