@@ -219,7 +219,9 @@ int main(int argc, char **argv)
         lgGpiochipClose(h);
         return 1;
     }
-    lgGpioWrite(h, IN1, 1);                     /* sentido de giro (+1) */
+    /* AJUSTE: parado = IN1 e IN2 em 0 (ponte H desligada, motor livre), como na versao
+     * em Python. O sentido (+1) so e ligado ao entrar em manual/PID (no laco). */
+    lgGpioWrite(h, IN1, 0);
     lgGpioWrite(h, IN2, 0);
 
     /* Encoder: entrada com pull-up, alerta nas duas bordas */
@@ -271,6 +273,8 @@ int main(int argc, char **argv)
     long prev_count = __atomic_load_n(&count, __ATOMIC_RELAXED);
     int negativas = 0;
     double u = 0.0;
+    double u_aplicado = -1.0;      /* ultimo duty enviado ao PWM (-1 = nenhum ainda) */
+    int ponte_ligada = 0;          /* IN1/IN2 em sentido +1? */
 
     while (running) {
         next.tv_nsec += ts_ns;                       /* proximo instante */
@@ -334,7 +338,24 @@ int main(int argc, char **argv)
         } else {
             u = 0.0;
         }
-        lgTxPwm(h, PWM_PIN, PWM_FREQ, (float)u, 0, 0);   /* duty em % */
+
+        /* AJUSTE: ponte H so habilitada fora do modo parado */
+        if (modo != PARADO && !ponte_ligada) {
+            lgGpioWrite(h, IN1, 1);                      /* sentido de giro (+1) */
+            lgGpioWrite(h, IN2, 0);
+            ponte_ligada = 1;
+        } else if (modo == PARADO && ponte_ligada) {
+            lgGpioWrite(h, IN1, 0);
+            lgGpioWrite(h, IN2, 0);
+            ponte_ligada = 0;
+        }
+        /* AJUSTE: o PWM so e reaplicado quando o duty muda. Chamar lgTxPwm a cada
+         * 20 ms reinicia a onda e pode gerar pulsos espurios (apito no motor parado). */
+        double du = u - u_aplicado;
+        if (du > 0.05 || du < -0.05) {
+            lgTxPwm(h, PWM_PIN, PWM_FREQ, (float)u, 0, 0);   /* duty em % */
+            u_aplicado = u;
+        }
 
         double t = segundos(t0, now);
         if (arq && modo == PID)
